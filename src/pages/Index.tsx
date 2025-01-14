@@ -4,6 +4,8 @@ import { StepIndicator } from "@/components/StepIndicator";
 import { QuestionReview } from "@/components/QuestionReview";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { LogOut } from "lucide-react";
 
 const STEPS = ["Upload References", "Upload Form", "Review"];
 
@@ -68,17 +70,26 @@ const Index = () => {
 
   const handleAnswerUpdate = (questionId: string, answer: string) => {
     console.log("Answer updated:", { questionId, answer });
-    // Here you would typically update your state or make an API call
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 animate-fade-in">
       <div className="max-w-4xl mx-auto">
-        <header className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">Form Drafter AI</h1>
-          <p className="text-gray-600">
-            Easily fill your forms with data from your reference documents
-          </p>
+        <header className="flex justify-between items-center mb-12">
+          <div>
+            <h1 className="text-4xl font-bold mb-4">Form Drafter AI</h1>
+            <p className="text-gray-600">
+              Easily fill your forms with data from your reference documents
+            </p>
+          </div>
+          <Button variant="outline" onClick={handleLogout}>
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
         </header>
 
         <StepIndicator currentStep={currentStep} steps={STEPS} />

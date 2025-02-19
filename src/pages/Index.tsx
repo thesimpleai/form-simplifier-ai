@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
 import { StepIndicator } from "@/components/StepIndicator";
@@ -100,7 +99,6 @@ const Index = () => {
           const extractedData = processingResult.data;
           
           setQuestions(prev => prev.map(question => {
-            // Try to match questions with extracted data
             const lowercaseText = question.text.toLowerCase();
             let answer = '';
             
@@ -148,10 +146,14 @@ const Index = () => {
   };
 
   const handleAnswerUpdate = (questionId: string, answer: string) => {
-    setSelectedAnswers((prev) => ({
-      ...prev,
-      [questionId]: answer
-    }));
+    setSelectedAnswers((prev) => {
+      const newAnswers = {
+        ...prev,
+        [questionId]: answer
+      };
+      console.log("Updated answers:", newAnswers);
+      return newAnswers;
+    });
   };
 
   const handleLogout = async () => {
@@ -159,11 +161,20 @@ const Index = () => {
   };
 
   const handleGenerateFinalForm = async () => {
-    const unansweredQuestions = questions.filter(
-      question => !selectedAnswers[question.id]
+    if (questions.length === 0) {
+      toast({
+        title: "No questions available",
+        description: "Please make sure you have uploaded and analyzed a form first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const answeredQuestions = questions.filter(
+      question => selectedAnswers[question.id]?.trim()
     );
 
-    if (unansweredQuestions.length > 0) {
+    if (answeredQuestions.length < questions.length) {
       toast({
         title: "Missing answers",
         description: "Please provide answers for all questions before generating the final form",
@@ -172,10 +183,13 @@ const Index = () => {
       return;
     }
 
+    const formattedAnswers = questions
+      .map(q => `${q.text}: ${selectedAnswers[q.id]}`)
+      .join('\n');
+
     toast({
       title: "Form Generated",
-      description: "Your form has been generated with the following answers:\n" + 
-        questions.map(q => `${q.text}: ${selectedAnswers[q.id]}`).join('\n'),
+      description: "Your form has been generated with the following answers:\n" + formattedAnswers,
     });
 
     console.log("Generated form with answers:", selectedAnswers);

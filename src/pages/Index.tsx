@@ -6,7 +6,7 @@ import { QuestionReview } from "@/components/QuestionReview";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { LogOut } from "lucide-react";
+import { LogOut, Loader2 } from "lucide-react";
 
 const STEPS = ["Upload References", "Review"];
 
@@ -20,17 +20,16 @@ type Question = {
 const Index = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
-  const [formFile, setFormFile] = useState<File[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+  const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
 
-  // Mock questions for demonstration
   const questions: Question[] = [
     {
       id: "1",
       text: "What is the applicant's full name?",
-      proposedAnswers: ["John Smith", "John A. Smith"],
-      status: "conflict",
+      proposedAnswers: [],
+      status: "no_match",
     },
     {
       id: "2",
@@ -41,19 +40,69 @@ const Index = () => {
     {
       id: "3",
       text: "What is the applicant's current address?",
-      proposedAnswers: ["123 Main St, Anytown, USA"],
-      status: "resolved",
+      proposedAnswers: [],
+      status: "no_match",
     },
   ];
 
-  const handleNext = () => {
-    if (currentStep === 0 && referenceFiles.length === 0) {
-      toast({
-        title: "No files selected",
-        description: "Please upload at least one reference document",
-        variant: "destructive",
-      });
-      return;
+  const handleNext = async () => {
+    if (currentStep === 0) {
+      if (referenceFiles.length === 0) {
+        toast({
+          title: "No files selected",
+          description: "Please upload at least one reference document",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsProcessing(true);
+      try {
+        const formData = new FormData();
+        referenceFiles.forEach((file) => {
+          formData.append('files', file);
+        });
+
+        const { data: processingResult } = await supabase.functions.invoke('process-documents', {
+          body: formData,
+        });
+
+        if (processingResult?.data) {
+          // Update the questions with extracted information
+          const extractedData = processingResult.data;
+          
+          // Map the extracted data to our questions
+          if (extractedData.fullName || extractedData.name) {
+            questions[0].proposedAnswers = [extractedData.fullName || extractedData.name];
+            questions[0].status = "resolved";
+          }
+          
+          if (extractedData.dateOfBirth || extractedData.dob) {
+            questions[1].proposedAnswers = [extractedData.dateOfBirth || extractedData.dob];
+            questions[1].status = "resolved";
+          }
+          
+          if (extractedData.address) {
+            questions[2].proposedAnswers = [extractedData.address];
+            questions[2].status = "resolved";
+          }
+
+          toast({
+            title: "Documents processed",
+            description: "Information has been extracted from your documents",
+          });
+        }
+      } catch (error) {
+        console.error('Error processing documents:', error);
+        toast({
+          title: "Error processing documents",
+          description: "There was an error processing your documents. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      } finally {
+        setIsProcessing(false);
+      }
     }
     setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
   };
@@ -74,7 +123,6 @@ const Index = () => {
   };
 
   const handleGenerateFinalForm = async () => {
-    // Check if all questions have answers
     const unansweredQuestions = questions.filter(
       question => !selectedAnswers[question.id]
     );
@@ -88,17 +136,12 @@ const Index = () => {
       return;
     }
 
-    // Show success toast when form is generated
     toast({
       title: "Form Generated",
       description: "Your form has been generated with the following answers:\n" + 
         questions.map(q => `${q.text}: ${selectedAnswers[q.id]}`).join('\n'),
     });
 
-    // Here you would typically:
-    // 1. Save the form data to your database
-    // 2. Generate a PDF or document with the answers
-    // 3. Allow the user to download the generated form
     console.log("Generated form with answers:", selectedAnswers);
   };
 
@@ -148,8 +191,18 @@ const Index = () => {
           </Button>
           
           {currentStep < STEPS.length - 1 ? (
-            <Button onClick={handleNext}>
-              Next
+            <Button 
+              onClick={handleNext}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing
+                </>
+              ) : (
+                'Next'
+              )}
             </Button>
           ) : (
             <Button onClick={handleGenerateFinalForm}>

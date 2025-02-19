@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
 import { StepIndicator } from "@/components/StepIndicator";
@@ -7,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut } from "lucide-react";
 
-const STEPS = ["Upload References", "Upload Form", "Review"];
+const STEPS = ["Upload References", "Review"];
 
 type Question = {
   id: string;
@@ -20,6 +21,7 @@ const Index = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
   const [formFile, setFormFile] = useState<File[]>([]);
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const { toast } = useToast();
 
   // Mock questions for demonstration
@@ -53,14 +55,6 @@ const Index = () => {
       });
       return;
     }
-    if (currentStep === 1 && formFile.length === 0) {
-      toast({
-        title: "No form selected",
-        description: "Please upload a form to proceed",
-        variant: "destructive",
-      });
-      return;
-    }
     setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
   };
 
@@ -69,11 +63,43 @@ const Index = () => {
   };
 
   const handleAnswerUpdate = (questionId: string, answer: string) => {
-    console.log("Answer updated:", { questionId, answer });
+    setSelectedAnswers((prev) => ({
+      ...prev,
+      [questionId]: answer
+    }));
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleGenerateFinalForm = async () => {
+    // Check if all questions have answers
+    const unansweredQuestions = questions.filter(
+      question => !selectedAnswers[question.id]
+    );
+
+    if (unansweredQuestions.length > 0) {
+      toast({
+        title: "Missing answers",
+        description: "Please provide answers for all questions before generating the final form",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Show success toast when form is generated
+    toast({
+      title: "Form Generated",
+      description: "Your form has been generated with the following answers:\n" + 
+        questions.map(q => `${q.text}: ${selectedAnswers[q.id]}`).join('\n'),
+    });
+
+    // Here you would typically:
+    // 1. Save the form data to your database
+    // 2. Generate a PDF or document with the answers
+    // 3. Allow the user to download the generated form
+    console.log("Generated form with answers:", selectedAnswers);
   };
 
   return (
@@ -81,7 +107,7 @@ const Index = () => {
       <div className="max-w-4xl mx-auto">
         <header className="flex justify-between items-center mb-12">
           <div>
-            <h1 className="text-4xl font-bold mb-4">Form Drafter AI</h1>
+            <h1 className="text-4xl font-bold mb-4">Form-Filling AI</h1>
             <p className="text-gray-600">
               Easily fill your forms with data from your reference documents
             </p>
@@ -105,15 +131,6 @@ const Index = () => {
           )}
 
           {currentStep === 1 && (
-            <FileUpload
-              title="Upload Your Form"
-              description="Upload the form you want to fill (PDF, DOC, DOCX, or TXT)"
-              onFilesSelected={setFormFile}
-              maxFiles={1}
-            />
-          )}
-
-          {currentStep === 2 && (
             <QuestionReview
               questions={questions}
               onAnswerUpdate={handleAnswerUpdate}
@@ -135,7 +152,7 @@ const Index = () => {
               Next
             </Button>
           ) : (
-            <Button onClick={() => console.log("Generate final form")}>
+            <Button onClick={handleGenerateFinalForm}>
               Generate Final Form
             </Button>
           )}

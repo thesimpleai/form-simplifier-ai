@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { FileUpload } from "@/components/FileUpload";
 import { StepIndicator } from "@/components/StepIndicator";
@@ -44,29 +45,63 @@ const Index = () => {
         });
         formData.append('mode', 'analyze');
 
-        const { data: processingResult } = await supabase.functions.invoke('process-documents', {
+        console.log('Analyzing form:', formFile[0].name);
+        
+        const { data: processingResult, error } = await supabase.functions.invoke('process-documents', {
           body: formData,
         });
 
-        if (processingResult?.data && Array.isArray(processingResult.data)) {
-          const extractedQuestions = processingResult.data.map((q: any) => ({
-            id: q.id,
+        console.log('Processing result:', processingResult);
+        
+        if (error) {
+          throw new Error(`Function error: ${error.message}`);
+        }
+
+        if (!processingResult?.data) {
+          throw new Error('No data received from processing');
+        }
+
+        let extractedQuestions;
+        if (Array.isArray(processingResult.data)) {
+          extractedQuestions = processingResult.data.map((q: any) => ({
+            id: q.id || crypto.randomUUID(),
             text: q.text,
             proposedAnswers: [],
             status: "no_match" as const,
           }));
-          setQuestions(extractedQuestions);
-          
-          toast({
-            title: "Form analyzed",
-            description: `Successfully extracted ${extractedQuestions.length} questions from the form`,
-          });
+        } else {
+          // Handle case where API returns object instead of array
+          const questions = [];
+          for (const key in processingResult.data) {
+            if (typeof processingResult.data[key] === 'string') {
+              questions.push({
+                id: crypto.randomUUID(),
+                text: key,
+                proposedAnswers: [],
+                status: "no_match" as const,
+              });
+            }
+          }
+          extractedQuestions = questions;
         }
+
+        console.log('Extracted questions:', extractedQuestions);
+
+        if (extractedQuestions.length === 0) {
+          throw new Error('No questions could be extracted from the form');
+        }
+
+        setQuestions(extractedQuestions);
+        
+        toast({
+          title: "Form analyzed",
+          description: `Successfully extracted ${extractedQuestions.length} questions from the form`,
+        });
       } catch (error) {
         console.error('Error analyzing form:', error);
         toast({
           title: "Error analyzing form",
-          description: "There was an error analyzing your form. Please try again.",
+          description: error instanceof Error ? error.message : "There was an error analyzing your form. Please try again.",
           variant: "destructive",
         });
         return;
@@ -161,6 +196,9 @@ const Index = () => {
   };
 
   const handleGenerateFinalForm = async () => {
+    console.log('Current questions:', questions);
+    console.log('Current selected answers:', selectedAnswers);
+    
     if (questions.length === 0) {
       toast({
         title: "No questions available",

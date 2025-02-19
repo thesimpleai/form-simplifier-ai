@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut, Loader2 } from "lucide-react";
 
-const STEPS = ["Upload References", "Review"];
+const STEPS = ["Upload Form", "Upload References", "Review"];
 
 type Question = {
   id: string;
@@ -19,34 +19,62 @@ type Question = {
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState(0);
+  const [formFile, setFormFile] = useState<File[]>([]);
   const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
 
-  const questions: Question[] = [
-    {
-      id: "1",
-      text: "What is the applicant's full name?",
-      proposedAnswers: [],
-      status: "no_match",
-    },
-    {
-      id: "2",
-      text: "What is the applicant's date of birth?",
-      proposedAnswers: [],
-      status: "no_match",
-    },
-    {
-      id: "3",
-      text: "What is the applicant's current address?",
-      proposedAnswers: [],
-      status: "no_match",
-    },
-  ];
-
   const handleNext = async () => {
     if (currentStep === 0) {
+      if (formFile.length === 0) {
+        toast({
+          title: "No form selected",
+          description: "Please upload an empty form to analyze",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsProcessing(true);
+      try {
+        const formData = new FormData();
+        formFile.forEach((file) => {
+          formData.append('files', file);
+        });
+        formData.append('mode', 'analyze');
+
+        const { data: processingResult } = await supabase.functions.invoke('process-documents', {
+          body: formData,
+        });
+
+        if (processingResult?.data && Array.isArray(processingResult.data)) {
+          const extractedQuestions = processingResult.data.map((q: any) => ({
+            id: q.id,
+            text: q.text,
+            proposedAnswers: [],
+            status: "no_match" as const,
+          }));
+          setQuestions(extractedQuestions);
+          
+          toast({
+            title: "Form analyzed",
+            description: `Successfully extracted ${extractedQuestions.length} questions from the form`,
+          });
+        }
+      } catch (error) {
+        console.error('Error analyzing form:', error);
+        toast({
+          title: "Error analyzing form",
+          description: "There was an error analyzing your form. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      } finally {
+        setIsProcessing(false);
+      }
+    } else if (currentStep === 1) {
       if (referenceFiles.length === 0) {
         toast({
           title: "No files selected",
@@ -62,30 +90,38 @@ const Index = () => {
         referenceFiles.forEach((file) => {
           formData.append('files', file);
         });
+        formData.append('mode', 'extract');
 
         const { data: processingResult } = await supabase.functions.invoke('process-documents', {
           body: formData,
         });
 
         if (processingResult?.data) {
-          // Update the questions with extracted information
           const extractedData = processingResult.data;
           
-          // Map the extracted data to our questions
-          if (extractedData.fullName || extractedData.name) {
-            questions[0].proposedAnswers = [extractedData.fullName || extractedData.name];
-            questions[0].status = "resolved";
-          }
-          
-          if (extractedData.dateOfBirth || extractedData.dob) {
-            questions[1].proposedAnswers = [extractedData.dateOfBirth || extractedData.dob];
-            questions[1].status = "resolved";
-          }
-          
-          if (extractedData.address) {
-            questions[2].proposedAnswers = [extractedData.address];
-            questions[2].status = "resolved";
-          }
+          setQuestions(prev => prev.map(question => {
+            // Try to match questions with extracted data
+            const lowercaseText = question.text.toLowerCase();
+            let answer = '';
+            
+            if (lowercaseText.includes('name')) {
+              answer = extractedData.fullName || extractedData.name || '';
+            } else if (lowercaseText.includes('birth') || lowercaseText.includes('dob')) {
+              answer = extractedData.dateOfBirth || extractedData.dob || '';
+            } else if (lowercaseText.includes('address')) {
+              answer = extractedData.address || '';
+            } else if (lowercaseText.includes('phone')) {
+              answer = extractedData.phone || extractedData.phoneNumber || '';
+            } else if (lowercaseText.includes('email')) {
+              answer = extractedData.email || '';
+            }
+
+            return {
+              ...question,
+              proposedAnswers: answer ? [answer] : [],
+              status: answer ? "resolved" : "no_match",
+            };
+          }));
 
           toast({
             title: "Documents processed",
@@ -166,6 +202,15 @@ const Index = () => {
         <main className="bg-white rounded-xl shadow-sm p-8 mb-8">
           {currentStep === 0 && (
             <FileUpload
+              title="Upload Empty Form"
+              description="Upload the form you want to fill (PDF format)"
+              onFilesSelected={setFormFile}
+              maxFiles={1}
+            />
+          )}
+
+          {currentStep === 1 && (
+            <FileUpload
               title="Upload Reference Documents"
               description="Upload your reference documents (PDF, DOC, DOCX, or TXT)"
               onFilesSelected={setReferenceFiles}
@@ -173,7 +218,7 @@ const Index = () => {
             />
           )}
 
-          {currentStep === 1 && (
+          {currentStep === 2 && (
             <QuestionReview
               questions={questions}
               onAnswerUpdate={handleAnswerUpdate}

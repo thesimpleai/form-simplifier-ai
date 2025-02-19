@@ -8,7 +8,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -21,12 +20,12 @@ serve(async (req) => {
 
     const formData = await req.formData()
     const files = formData.getAll('files')
+    const mode = formData.get('mode') // 'extract' or 'analyze'
 
     if (!files || files.length === 0) {
       throw new Error('No files uploaded')
     }
 
-    // Initialize Gemini
     const genAI = new GoogleGenerativeAI(geminiApiKey)
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" })
 
@@ -42,23 +41,27 @@ serve(async (req) => {
       })
     }
 
+    let prompt
+    if (mode === 'analyze') {
+      prompt = "Analyze this form and extract all questions or fields that need to be filled. Format the response as a JSON array of objects, where each object has: 'id' (string), 'text' (the question or field label), and 'type' (string - one of: 'text', 'date', 'address', 'phone', 'email'). Example: [{\"id\":\"1\", \"text\":\"What is your full name?\", \"type\":\"text\"}]"
+    } else {
+      prompt = "Extract all relevant information from these documents that could be used to fill out forms, such as: full name, date of birth, address, phone number, email, employment information, etc. Format the response as a JSON object with clear key-value pairs."
+    }
+
     const result = await model.generateContent([
       ...fileContents,
-      "Extract all relevant information from these documents that could be used to fill out forms, such as: full name, date of birth, address, phone number, email, employment information, etc. Format the response as a JSON object with clear key-value pairs.",
+      prompt,
     ])
 
     const response = await result.response
     const text = response.text()
 
-    // Try to parse the response as JSON
     let parsedData
     try {
-      // Find JSON-like content within the text (between curly braces)
-      const jsonMatch = text.match(/\{[\s\S]*\}/)
+      const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/)
       if (jsonMatch) {
         parsedData = JSON.parse(jsonMatch[0])
       } else {
-        // If no JSON found, create a simple key-value object
         parsedData = { rawText: text }
       }
     } catch (e) {
